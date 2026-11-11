@@ -13,6 +13,11 @@
 </head>
 <body>
 <div class="w" id="app"></div>
+<script>
+function showErr(t){var a=document.getElementById('app');if(a&&!a.children.length)a.textContent='Erro ao carregar o app: '+t;a.style.cssText='white-space:pre-wrap;word-break:break-word;padding:20px;font:14px sans-serif'}
+addEventListener('error',function(e){showErr((e.message||'não foi possível carregar '+((e.target&&(e.target.src||e.target.href))||'um arquivo')))},true);
+addEventListener('unhandledrejection',function(e){showErr(String(e.reason&&e.reason.message||e.reason))});
+</script>
 <script type="module" src="app.js"></script>
 </body>
 </html>
