@@ -96,7 +96,7 @@ function accountCard(){
   so.onclick=()=>{st.del('diario:pin:'+me.id);signOut(auth)};dl.onclick=delScreen;c.append(so,dl);
   if(st.get('diario:e')){
     const lg=el('button',{className:'btn o'},'Importar diário antigo deste aparelho');
-    lg.onclick=async()=>{try{const e=JSON.parse(st.get('diario:e')||'{}'),r=JSON.parse(st.get('diario:r')||'{}');Object.assign(E,e);Object.assign(R,r);await save();cal();editor();showAn();monthly();msg.textContent='Diário antigo importado ✓ ('+Object.keys(e).length+' dias)'}catch(x){msg.textContent='Não foi possível importar.'}};
+    lg.onclick=async()=>{try{const e=JSON.parse(st.get('diario:e')||'{}'),r=JSON.parse(st.get('diario:r')||'{}');mergeE(e);Object.assign(R,r);await save();cal();editor();showAn();monthly();msg.textContent='Diário antigo importado ✓ ('+Object.keys(e).length+' dias)'}catch(x){msg.textContent='Não foi possível importar.'}};
     c.append(lg);
   }
   c.append(msg);box.append(el('hr'),c);
@@ -125,22 +125,29 @@ function cal(){
   }
 }
 
+function mergeE(src){for(const k in src){const c=E[k];if(c&&(c.locked||c.an))continue;E[k]=src[k];if(src[k].an)E[k].locked=true}}
 function editor(){
-  const e=E[sel]||{},box=$('#ed');mood=e.mood||0;
+  const e=E[sel]||{},box=$('#ed');mood=e.mood||0;const lk=!!(e.locked||e.an);
   const dt=new Date(sel+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'});
   box.innerHTML='';
   const h=el('h2',{style:'text-transform:capitalize'},dt),mv=el('div',{className:'moods'});
   MN.forEach((n,i)=>{const b=el('button',{title:n,className:mood===i+1?'on':''});b.innerHTML=face(i);b.style.setProperty('--c',COL[i]);
-    b.onclick=()=>{mood=mood===i+1?0:i+1;[...mv.children].forEach((c,j)=>c.className=mood===j+1?'on':'')};mv.append(b)});
-  const ta=el('textarea',{placeholder:'Como foi o seu dia? Escreva tudo: o que aconteceu, o que sentiu, o que te deixou satisfeito(a) e suas conquistas.',value:txtOf(e)});
-  const sv=el('button',{className:'btn'},'Salvar o dia'),msg=el('p',{className:'mut',style:'min-height:1.3em;margin:8px 0 0'});
-  box.append(h,mv,ta,sv,msg);
+    b.onclick=()=>{if(lk)return;mood=mood===i+1?0:i+1;[...mv.children].forEach((c,j)=>c.className=mood===j+1?'on':'')};mv.append(b)});
+  const ta=el('textarea',{placeholder:'Como foi o seu dia? Escreva tudo: o que aconteceu, o que sentiu, o que te deixou satisfeito(a) e suas conquistas.',value:txtOf(e),readOnly:lk});
+  const sv=el('button',{className:'btn'},'Salvar o dia'),cn=el('button',{className:'btn o',style:'display:none'},'Cancelar'),msg=el('p',{className:'mut',style:'min-height:1.3em;margin:8px 0 0'});
+  if(lk){sv.style.display='none';msg.textContent='Este dia já foi salvo e analisado e não pode mais ser editado.'}
+  box.append(h,mv,ta,sv,cn,msg);
+  let armed=false;
+  const reset=()=>{armed=false;sv.textContent='Salvar o dia';cn.style.display='none'};
+  cn.onclick=()=>{reset();msg.textContent=''};
   sv.onclick=async()=>{
     const t=ta.value.trim();if(!t){msg.textContent='Escreva sobre o seu dia primeiro.';return}
-    const o={mood,txt:t,an:(E[sel]||{}).an};E[sel]=o;save();cal();
+    if(!armed){armed=true;sv.textContent='Confirmar e salvar';cn.style.display='block';msg.textContent='Atenção: só é possível fazer uma análise por dia. Depois que a análise for gerada, este dia não poderá mais ser editado.';return}
+    reset();
+    const o={mood,txt:t};E[sel]=o;save();cal();
     sv.disabled=true;msg.textContent='Dia salvo. Analisando…';
-    try{o.an=await analyze(o,dt);E[sel]=o;save();msg.textContent='Dia salvo ✓'}
-    catch(x){msg.textContent=x.message==='nokey'?'Dia salvo. Para ativar a análise, adicione sua chave da API no fim da página.':'Dia salvo. Falha na análise: '+x.message}
+    try{o.an=await analyze(o,dt);o.locked=true;E[sel]=o;save();editor();showAn();return}
+    catch(x){msg.textContent=x.message==='nokey'?'Dia salvo, mas a análise não foi feita: adicione sua chave da API no fim da página. O dia continua editável.':'Dia salvo, mas a análise falhou: '+x.message+' O dia continua editável; toque em Salvar para tentar de novo.'}
     sv.disabled=false;showAn();
   };
 }
@@ -149,7 +156,7 @@ const MODEL='claude-sonnet-5-5';
 async function ask(p){
   const k=st.get('diario:apikey');if(!k)throw new Error('nokey');
   const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':k,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:MODEL,max_tokens:1500,system:SYS,messages:[{role:'user',content:p}]})});
-  if(!r.ok){let m='';try{m=((await r.json()).error||{}).message||''}catch(e){}throw new Error('Erro '+r.status+(m?' — '+m:''))}
+  if(!r.ok){let m='';try{m=((await r.json()).error||{}).message||''}catch(e){}if(/credit balance/i.test(m))throw new Error('Saldo de créditos da API insuficiente. Adicione créditos em console.anthropic.com → Billing.');throw new Error('Erro '+r.status+(m?' — '+m:''))}
   const d=await r.json(),t=d.content.map(c=>c.text||'').join('');
   try{return JSON.parse(t.slice(t.indexOf('{'),t.lastIndexOf('}')+1))}catch(e){throw new Error('A IA respondeu em formato inesperado. Tente novamente.')}
 }
@@ -203,7 +210,7 @@ function backup(){
   im.onclick=()=>{if(ok())fi.click()};
   fi.onchange=async()=>{
     const f=fi.files[0];if(!f)return;msg.textContent='Descriptografando…';
-    try{const o=await dec(await f.text(),pw.value);Object.assign(E,o.E||{});Object.assign(R,o.R||{});
+    try{const o=await dec(await f.text(),pw.value);mergeE(o.E||{});Object.assign(R,o.R||{});
       save();cal();editor();showAn();monthly();msg.textContent='Backup importado ✓ ('+Object.keys(o.E||{}).length+' dias)'}
     catch(e){msg.textContent='Senha incorreta ou arquivo inválido.'}
     fi.value='';
@@ -213,10 +220,10 @@ function backup(){
 function apiCard(){
   const box=$('#ak');box.innerHTML='';
   const c=el('div',{className:'sec'}),msg=el('p',{className:'mut',style:'margin:8px 0 0'}),has=()=>st.get('diario:apikey')?'Chave salva ✓ (cole outra para trocar)':'sk-ant-...';
-  c.append(el('h2',0,'Análise por IA'),el('p',{className:'mut',style:'text-align:justify'},'Para ativar a análise, cole sua chave da API da Anthropic. Ela fica salva só neste aparelho e é enviada apenas à Anthropic.'));
+  const info=el('p',{className:'mut',style:'text-align:justify'}),upd=()=>{info.textContent=st.get('diario:apikey')?'Análise ativada ✓ Há uma chave salva neste aparelho. Cole outra abaixo só se quiser trocá-la.':'Para ativar a análise, cole sua chave da API da Anthropic. Ela fica salva só neste aparelho e é enviada apenas à Anthropic.'};upd();c.append(el('h2',0,'Análise por IA'),info);
   const k=el('input',{type:'password',placeholder:has(),autocomplete:'off'}),sv=el('button',{className:'btn'},'Salvar chave'),rm=el('button',{className:'btn o'},'Remover chave');
-  sv.onclick=()=>{const v=k.value.trim();if(!v.startsWith('sk-ant-')){msg.textContent='Chave inválida.';return}st.set('diario:apikey',v);k.value='';k.placeholder=has();msg.textContent='Chave salva ✓'};
-  rm.onclick=()=>{st.del('diario:apikey');k.placeholder=has();msg.textContent='Chave removida.'};
+  sv.onclick=()=>{const v=k.value.trim();if(!v.startsWith('sk-ant-')){msg.textContent='Chave inválida.';return}st.set('diario:apikey',v);k.value='';k.placeholder=has();upd();msg.textContent='Chave salva ✓'};
+  rm.onclick=()=>{st.del('diario:apikey');k.placeholder=has();upd();msg.textContent='Chave removida.'};
   c.append(k,sv,rm,msg);box.append(el('hr'),c);
 }
 if(NOCFG)app.innerHTML='<div class="lock"><h1>Configuração pendente</h1><p class="mut" style="text-align:justify">Preencha o arquivo firebase-config.js com os dados do seu projeto Firebase. Veja o README.</p></div>';

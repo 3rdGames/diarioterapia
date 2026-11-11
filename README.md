@@ -23,6 +23,7 @@ Envie todos os arquivos para a raiz do repositório e ative **Settings → Pages
 - O diário fica no Firestore e sincroniza entre aparelhos. Sair da conta não apaga nada da nuvem. **Excluir conta e dados** exige a senha e apaga tudo.
 - **Importar diário antigo deste aparelho** (seção Conta) traz as entradas da versão antiga, que ficavam só no navegador.
 - A **chave da API da Anthropic** para a análise por IA é colada em cada aparelho e fica só nele. O modelo está em `MODEL`, no `app.js`.
+- Uma análise por dia: ao salvar, o app avisa e pede confirmação. Depois de analisado, o dia fica travado (também pelas regras do Firestore, por isso publique o `firestore.rules` atualizado). Se a análise falhar, o dia continua editável.
 - Backup criptografado (AES-GCM) continua disponível.
 
 ## Privacidade
